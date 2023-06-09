@@ -190,7 +190,7 @@ data "aws_iam_policy_document" "allow_lambda" {
     }
     actions = [
       "s3:*",
-      "ssm:GetParameter"
+      "ssm:GetParameters"
     ]
     resources = [
       "arn:aws:s3:::chadedwardsapi",
