@@ -11,22 +11,22 @@ variable "profile" {
 
 variable "twilio_user" {
   type    = string
-  default = ""
+  default = "twilio_user"
 }
 
 variable "twilio_pass" {
   type    = string
-  default = ""
+  default = "twilio_pass"
 }
 
 variable "twilio_source" {
   type    = string
-  default = ""
+  default = "twilio_source"
 }
 
 variable "twilio_destination" {
   type    = string
-  default = ""
+  default = "twilio_destination"
 }
 
 # provider
@@ -88,10 +88,10 @@ resource "aws_lambda_function" "server" {
   source_code_hash = filebase64sha256("../lambda.zip")
   environment {
     variables = {
-      TWILIO_USER        = data.twilio_user
-      TWILIO_PASS        = data.twilio_pass
-      TWILIO_SOURCE      = data.twilio_source
-      TWILIO_DESTINATION = data.twilio_destination
+      TWILIO_USER        = data.aws_ssm_parameter.twilio_user.value
+      TWILIO_PASS        = data.aws_ssm_parameter.twilio_pass.value
+      TWILIO_SOURCE      = data.aws_ssm_parameter.twilio_source.value
+      TWILIO_DESTINATION = data.aws_ssm_parameter.twilio_destination.value
     }
   }
 }
