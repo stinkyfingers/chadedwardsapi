@@ -137,7 +137,7 @@ resource "aws_lb_target_group_attachment" "server" {
 
 resource "aws_lb_listener_rule" "server" {
   listener_arn = data.terraform_remote_state.stinkyfingers.outputs.stinkyfingers_https_listener
-  priority     = 2
+  priority     = 22
   action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.target.arn
