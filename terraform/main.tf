@@ -210,7 +210,7 @@ data "aws_iam_policy_document" "allow_lambda_ssm" {
       identifiers = [aws_iam_role.lambda_role.arn]
     }
     actions = [
-      "ssm:GetParameters"
+      "ssm:*"
     ]
     resources = [
       data.aws_ssm_parameter.twilio_user.arn,
