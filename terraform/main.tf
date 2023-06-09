@@ -189,13 +189,38 @@ data "aws_iam_policy_document" "allow_lambda" {
       identifiers = [aws_iam_role.lambda_role.arn]
     }
     actions = [
-      "s3:*"
+      "s3:*",
+      "ssm:GetParameter"
     ]
     resources = [
       "arn:aws:s3:::chadedwardsapi",
-      "arn:aws:s3:::chadedwardsapi/*"
+      "arn:aws:s3:::chadedwardsapi/*",
+      data.aws_ssm_parameter.twilio_user.arn,
+      data.aws_ssm_parameter.twilio_pass.arn,
+      data.aws_ssm_parameter.twilio_source.arn,
+      data.aws_ssm_parameter.twilio_destination.arn
     ]
   }
+}
+
+data "aws_ssm_parameter" "twilio_user" {
+  name            = var.twilio_user
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "twilio_pass" {
+  name            = var.twilio_pass
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "twilio_source" {
+  name            = var.twilio_source
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "twilio_destination" {
+  name            = var.twilio_destination
+  with_decryption = false
 }
 
 # backend
