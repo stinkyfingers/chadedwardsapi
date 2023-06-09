@@ -221,6 +221,26 @@ data "aws_iam_policy_document" "allow_lambda_ssm" {
   }
 }
 
+resource "aws_s3_bucket_policy" "chadedwardsapi_kms" {
+  bucket = "chadedwardsapi"
+  policy = data.aws_iam_policy_document.allow_lambda_kms.json
+}
+
+data "aws_iam_policy_document" "allow_lambda_kms" {
+  statement {
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.lambda_role.arn]
+    }
+    actions = [
+      "kms:Decrypt"
+    ]
+    resources = [
+      "*"
+    ]
+  }
+}
+
 data "aws_ssm_parameter" "twilio_user" {
   name            = var.twilio_user
   with_decryption = true
