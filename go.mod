@@ -8,7 +8,9 @@ require (
 )
 
 require (
+	github.com/aws/aws-sdk-go v1.44.280 // indirect
 	github.com/golang/mock v1.6.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/twilio/twilio-go v1.7.2 // indirect
 )

@@ -3,23 +3,58 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/twilio/twilio-go"
-	openapi "github.com/twilio/twilio-go/rest/api/v2010"
+	"github.com/twilio/twilio-go/rest/api/v2010"
 )
 
 type Server struct {
+	Storage *s3.S3
 }
 
-func NewServer() *Server {
-	return &Server{}
+type Request struct {
+	IP      string `json:"ip"`
+	Message string `json:"message"`
+}
+
+type Permission map[string]time.Time // ip:time
+
+var (
+	timeout = time.Minute * 10
+)
+
+func NewServer() (*Server, error) {
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Profile: "jds", // TODO used locally only
+		Config: aws.Config{
+			Region: aws.String("us-west-1"),
+		},
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		Storage: s3.New(sess),
+	}, nil
 }
 
 // NewMux returns the router
 func NewMux() (http.Handler, error) {
-	s := NewServer()
+	s, err := NewServer()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	mux := http.NewServeMux()
 	mux.Handle("/sms", cors(s.HandleSendSMS))
 	mux.Handle("/health", cors(status))
@@ -68,26 +103,92 @@ func status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleSendSMS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	var req Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.checkPermission(req.IP); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	
+	if err := sendSMS(req.Message); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) checkPermission(ip string) error {
+	resp, err := s.Storage.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String("chadedwardsapi"),
+		Key:    aws.String("ip-blacklist"),
+	})
+	if err != nil { // return error unless file doesn't exist
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() != s3.ErrCodeNoSuchKey {
+				return err
+			}
+		}
+	}
+
+	permissions := make(Permission)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+		if err = json.NewDecoder(resp.Body).Decode(&permissions); err != nil {
+			return err
+		}
+	}
+	for ipAddress, timestamp := range permissions {
+		if ipAddress == ip && time.Now().Add(-1*timeout).Before(timestamp) {
+			return fmt.Errorf("permission denied")
+		}
+	}
+
+	permissions[ip] = time.Now()
+	j, err := json.Marshal(permissions)
+	if err != nil {
+		return err
+	}
+	_, err = s.Storage.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String("chadedwardsapi"),
+		Key:    aws.String("ip-blacklist"),
+		Body:   aws.ReadSeekCloser(strings.NewReader(string(j))),
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func sendSMS(msg string) error {
 	sid := os.Getenv("TWILIO_USER")
 	token := os.Getenv("TWILIO_PASS")
 	if sid == "" || token == "" {
-		http.Error(w, "missing twilio credentials", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("missing twilio credentials")
 	}
 	client := twilio.NewRestClientWithParams(twilio.ClientParams{
 		Username: sid,
 		Password: token,
 	})
+	destinations := strings.Split(os.Getenv("TWILIO_DESTINATION"), ",")
+	for _, destination := range destinations {
+		params := &openapi.CreateMessageParams{}
+		params.SetTo(destination)
+		params.SetFrom(os.Getenv("TWILIO_SOURCE"))
+		params.SetBody(msg)
 
-	params := &openapi.CreateMessageParams{}
-	params.SetTo(os.Getenv("TWILIO_DESTINATION")) //TODO, split
-	params.SetFrom(os.Getenv("TWILIO_SOURCE"))
-	params.SetBody("Hello from Golang!") // TODO
-
-	_, err := client.Api.CreateMessage(params)
-	if err != nil {
-		fmt.Println(err.Error())
-	} else {
-		fmt.Println("SMS sent successfully!")
+		_, err := client.Api.CreateMessage(params)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
