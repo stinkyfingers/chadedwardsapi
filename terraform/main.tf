@@ -140,6 +140,30 @@ resource "aws_iam_policy" "s3-policy" {
 EOF
 }
 
+resource "aws_iam_role_policy_attachment" "ssm-policy-attach" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.ssm-policy.arn
+}
+
+resource "aws_iam_policy" "ssm-policy" {
+  name        = "chadedwardsapi-lambda-ssm-policy"
+  description = "Grants lambda access to ssm"
+  policy      = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter"
+      ],
+      "Resource": "arn:aws:ssm:::*"
+    }
+  ]
+}
+EOF
+}
+
 resource "aws_iam_role_policy_attachment" "s3-policy-attach" {
   role       = aws_iam_role.lambda_role.name
   policy_arn = aws_iam_policy.s3-policy.arn
@@ -198,53 +222,6 @@ data "aws_iam_policy_document" "allow_lambda_s3" {
   }
 }
 
-resource "aws_s3_bucket_policy" "chadedwardsapi_ssm" {
-  bucket = "chadedwardsapi"
-  policy = data.aws_iam_policy_document.allow_lambda_ssm.json
-}
-
-data "aws_iam_policy_document" "allow_lambda_ssm" {
-  statement {
-    principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.lambda_role.arn]
-    }
-    actions = [
-      "ssm:GetParameter",
-      "ssm:GetParameters",
-      "ssm:GetParametersByPath",
-      "ssm:PutParameter",
-      "ssm:DeleteParameter"
-    ]
-    resources = [
-      data.aws_ssm_parameter.twilio_user.arn,
-      data.aws_ssm_parameter.twilio_pass.arn,
-      data.aws_ssm_parameter.twilio_source.arn,
-      data.aws_ssm_parameter.twilio_destination.arn
-    ]
-  }
-}
-
-resource "aws_s3_bucket_policy" "chadedwardsapi_kms" {
-  bucket = "chadedwardsapi"
-  policy = data.aws_iam_policy_document.allow_lambda_kms.json
-}
-
-data "aws_iam_policy_document" "allow_lambda_kms" {
-  statement {
-    principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.lambda_role.arn]
-    }
-    actions = [
-      "kms:Decrypt"
-    ]
-    resources = [
-      "*"
-    ]
-  }
-}
-
 data "aws_ssm_parameter" "twilio_user" {
   name            = var.twilio_user
   with_decryption = true
@@ -271,7 +248,7 @@ terraform {
     bucket = "remotebackend"
     key    = "chadedwardsapi/terraform.tfstate"
     region = "us-west-1"
-    #    profile = "jds"
+    #        profile = "jds"
   }
 }
 
