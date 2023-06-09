@@ -68,12 +68,21 @@ func status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleSendSMS(w http.ResponseWriter, r *http.Request) {
-	client := twilio.NewRestClient()
+	sid := os.Getenv("TWILIO_USER")
+	token := os.Getenv("TWILIO_PASS")
+	if sid == "" || token == "" {
+		http.Error(w, "missing twilio credentials", http.StatusInternalServerError)
+		return
+	}
+	client := twilio.NewRestClientWithParams(twilio.ClientParams{
+		Username: sid,
+		Password: token,
+	})
 
 	params := &openapi.CreateMessageParams{}
-	params.SetTo(os.Getenv("TO_PHONE_NUMBER"))
-	params.SetFrom(os.Getenv("TWILIO_PHONE_NUMBER"))
-	params.SetBody("Hello from Golang!")
+	params.SetTo(os.Getenv("TWILIO_DESTINATION")) //TODO, split
+	params.SetFrom(os.Getenv("TWILIO_SOURCE"))
+	params.SetBody("Hello from Golang!") // TODO
 
 	_, err := client.Api.CreateMessage(params)
 	if err != nil {

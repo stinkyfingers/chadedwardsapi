@@ -9,6 +9,26 @@ variable "profile" {
   default = "" #TODO - change during local tf apply
 }
 
+variable "twilio_user" {
+  type    = string
+  default = ""
+}
+
+variable "twilio_pass" {
+  type    = string
+  default = ""
+}
+
+variable "twilio_source" {
+  type    = string
+  default = ""
+}
+
+variable "twilio_destination" {
+  type    = string
+  default = "" 
+}
+
 # provider
 terraform {
   required_providers {
@@ -68,8 +88,10 @@ resource "aws_lambda_function" "server" {
   source_code_hash = filebase64sha256("../lambda.zip")
   environment {
     variables = {
-      STORAGE = "s3"
-      AUTH    = "GCP"
+      TWILIO_USER = var.twilio_user
+      TWILIO_PASS = var.twilio_pass
+      TWILIO_SOURCE = var.twilio_source
+      TWILIO_DESTINATION = var.twilio_destination
     }
   }
 }
