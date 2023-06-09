@@ -177,24 +177,42 @@ resource "aws_s3_bucket" "chadedwardsapi" {
   bucket = "chadedwardsapi"
 }
 
-resource "aws_s3_bucket_policy" "chadedwardsapi" {
+resource "aws_s3_bucket_policy" "chadedwardsapi_s3" {
   bucket = "chadedwardsapi"
-  policy = data.aws_iam_policy_document.allow_lambda.json
+  policy = data.aws_iam_policy_document.allow_lambda_s3.json
 }
 
-data "aws_iam_policy_document" "allow_lambda" {
+data "aws_iam_policy_document" "allow_lambda_s3" {
   statement {
     principals {
       type        = "AWS"
       identifiers = [aws_iam_role.lambda_role.arn]
     }
     actions = [
-      "s3:*",
-      "ssm:GetParameters"
+      "s3:*"
     ]
     resources = [
       "arn:aws:s3:::chadedwardsapi",
-      "arn:aws:s3:::chadedwardsapi/*",
+      "arn:aws:s3:::chadedwardsapi/*"
+    ]
+  }
+}
+
+resource "aws_s3_bucket_policy" "chadedwardsapi_ssm" {
+  bucket = "chadedwardsapi"
+  policy = data.aws_iam_policy_document.allow_lambda_ssm.json
+}
+
+data "aws_iam_policy_document" "allow_lambda_ssm" {
+  statement {
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.lambda_role.arn]
+    }
+    actions = [
+      "ssm:GetParameters"
+    ]
+    resources = [
       data.aws_ssm_parameter.twilio_user.arn,
       data.aws_ssm_parameter.twilio_pass.arn,
       data.aws_ssm_parameter.twilio_source.arn,
