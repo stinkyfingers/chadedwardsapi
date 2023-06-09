@@ -26,7 +26,7 @@ variable "twilio_source" {
 
 variable "twilio_destination" {
   type    = string
-  default = "" 
+  default = ""
 }
 
 # provider
@@ -88,9 +88,9 @@ resource "aws_lambda_function" "server" {
   source_code_hash = filebase64sha256("../lambda.zip")
   environment {
     variables = {
-      TWILIO_USER = var.twilio_user
-      TWILIO_PASS = var.twilio_pass
-      TWILIO_SOURCE = var.twilio_source
+      TWILIO_USER        = var.twilio_user
+      TWILIO_PASS        = var.twilio_pass
+      TWILIO_SOURCE      = var.twilio_source
       TWILIO_DESTINATION = var.twilio_destination
     }
   }
