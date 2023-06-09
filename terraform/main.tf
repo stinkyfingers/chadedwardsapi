@@ -233,7 +233,7 @@ data "aws_iam_policy_document" "allow_lambda_kms" {
       identifiers = [aws_iam_role.lambda_role.arn]
     }
     actions = [
-      "kms:Decrypt"
+      "kms:*"
     ]
     resources = [
       "*"
