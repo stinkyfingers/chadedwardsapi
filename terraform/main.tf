@@ -210,7 +210,11 @@ data "aws_iam_policy_document" "allow_lambda_ssm" {
       identifiers = [aws_iam_role.lambda_role.arn]
     }
     actions = [
-      "ssm:*"
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParametersByPath",
+      "ssm:PutParameter",
+      "ssm:DeleteParameter"
     ]
     resources = [
       data.aws_ssm_parameter.twilio_user.arn,
@@ -233,7 +237,7 @@ data "aws_iam_policy_document" "allow_lambda_kms" {
       identifiers = [aws_iam_role.lambda_role.arn]
     }
     actions = [
-      "kms:*"
+      "kms:Decrypt"
     ]
     resources = [
       "*"
