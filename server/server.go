@@ -24,13 +24,13 @@ type Server struct {
 type Request struct {
 	IP      string `json:"ip"`
 	Message string `json:"message"`
-	Title   string `json:"title"`
+	Song    string `json:"song"`
 	Artist  string `json:"artist"`
 }
 
 type Suggestion struct {
 	Message string `json:"message"`
-	Title   string `json:"title"`
+	Song    string `json:"song"`
 	Artist  string `json:"artist"`
 }
 
@@ -42,7 +42,7 @@ var (
 
 func NewServer() (*Server, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
-		//Profile: "jds", // TODO used locally only
+		Profile: "jds", // TODO used locally only
 		Config: aws.Config{
 			Region: aws.String("us-west-1"),
 		},
@@ -84,6 +84,7 @@ func isPermittedOrigin(origin string) string {
 
 func cors(handler func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("origin", r.Header.Get("Origin"))
 		permittedOrigin := isPermittedOrigin(r.Header.Get("Origin"))
 		w.Header().Set("Access-Control-Allow-Origin", permittedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
@@ -112,28 +113,28 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "invalid method", http.StatusBadRequest)
+		httpError(w, "invalid method", http.StatusBadRequest)
 		return
 	}
 
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	if err := s.checkPermission(req.IP); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		log.Print(err)
+		httpError(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	if err := sendSMS(req); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Add("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 }
@@ -160,7 +161,7 @@ func (s *Server) checkPermission(ip string) error {
 	}
 	for ipAddress, timestamp := range permissions {
 		if ipAddress == ip && time.Now().Add(-1*timeout).Before(timestamp) {
-			return fmt.Errorf("permission denied")
+			return fmt.Errorf("permission denied: you must wait 10 minutes before requesting again")
 		}
 	}
 
@@ -191,7 +192,7 @@ func sendSMS(req Request) error {
 		Password: token,
 	})
 	destinations := strings.Split(os.Getenv("TWILIO_DESTINATION"), ",")
-	msg := fmt.Sprintf("%s - %s\n%s", req.Title, req.Artist, req.Message)
+	msg := fmt.Sprintf("%s - %s\n%s", req.Song, req.Artist, req.Message)
 	for _, destination := range destinations {
 		params := &openapi.CreateMessageParams{}
 		params.SetTo(destination)
@@ -204,4 +205,17 @@ func sendSMS(req Request) error {
 		}
 	}
 	return nil
+}
+
+func httpError(w http.ResponseWriter, errStr string, code int) {
+	j, err := json.Marshal(map[string]interface{}{
+		"error": errStr,
+		"code":  code,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), code)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.Write(j)
 }
