@@ -24,6 +24,14 @@ type Server struct {
 type Request struct {
 	IP      string `json:"ip"`
 	Message string `json:"message"`
+	Title   string `json:"title"`
+	Artist  string `json:"artist"`
+}
+
+type Suggestion struct {
+	Message string `json:"message"`
+	Title   string `json:"title"`
+	Artist  string `json:"artist"`
 }
 
 type Permission map[string]time.Time // ip:time
@@ -34,7 +42,7 @@ var (
 
 func NewServer() (*Server, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
-		Profile: "jds", // TODO used locally only
+		//Profile: "jds", // TODO used locally only
 		Config: aws.Config{
 			Region: aws.String("us-west-1"),
 		},
@@ -56,7 +64,7 @@ func NewMux() (http.Handler, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/sms", cors(s.HandleSendSMS))
+	mux.Handle("/request", cors(s.HandleRequest))
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -102,7 +110,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
-func (s *Server) HandleSendSMS(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "invalid method", http.StatusBadRequest)
 		return
@@ -118,12 +126,16 @@ func (s *Server) HandleSendSMS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	
-	if err := sendSMS(req.Message); err != nil {
+	if err := sendSMS(req); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	w.Header().Add("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s *Server) checkPermission(ip string) error {
@@ -168,7 +180,7 @@ func (s *Server) checkPermission(ip string) error {
 	return nil
 }
 
-func sendSMS(msg string) error {
+func sendSMS(req Request) error {
 	sid := os.Getenv("TWILIO_USER")
 	token := os.Getenv("TWILIO_PASS")
 	if sid == "" || token == "" {
@@ -179,6 +191,7 @@ func sendSMS(msg string) error {
 		Password: token,
 	})
 	destinations := strings.Split(os.Getenv("TWILIO_DESTINATION"), ",")
+	msg := fmt.Sprintf("%s - %s\n%s", req.Title, req.Artist, req.Message)
 	for _, destination := range destinations {
 		params := &openapi.CreateMessageParams{}
 		params.SetTo(destination)
