@@ -23,6 +23,7 @@ type Server struct {
 
 type Request struct {
 	IP      string `json:"ip"`
+	Name    string `json:"name"`
 	Message string `json:"message"`
 	Song    string `json:"song"`
 	Artist  string `json:"artist"`
@@ -187,7 +188,7 @@ func sendSMS(req Request) error {
 		Password: token,
 	})
 	destinations := strings.Split(os.Getenv("TWILIO_DESTINATION"), ",")
-	msg := fmt.Sprintf("%s - %s\n%s", req.Song, req.Artist, req.Message)
+	msg := fmt.Sprintf("%s (%s)\nFrom: %s\nMessage: %s", req.Song, req.Artist, req.Name, req.Message)
 	for _, destination := range destinations {
 		params := &openapi.CreateMessageParams{}
 		params.SetTo(destination)
