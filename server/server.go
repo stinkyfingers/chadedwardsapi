@@ -84,7 +84,7 @@ func isPermittedOrigin(origin string) string {
 
 func cors(handler func(w http.ResponseWriter, r *http.Request)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Println("origin", r.Header.Get("Origin"), r.Header)
+		log.Println("origin/header", r.Header.Get("Origin"), r.Header)
 		permittedOrigin := isPermittedOrigin(r.Header.Get("Origin"))
 		w.Header().Set("Access-Control-Allow-Origin", permittedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
