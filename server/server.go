@@ -40,9 +40,9 @@ var (
 	timeout = time.Minute * 10
 )
 
-func NewServer() (*Server, error) {
+func NewServer(profile string) (*Server, error) {
 	sess, err := session.NewSessionWithOptions(session.Options{
-		Profile: "jds", // TODO used locally only
+		Profile: profile,
 		Config: aws.Config{
 			Region: aws.String("us-west-1"),
 		},
@@ -57,11 +57,7 @@ func NewServer() (*Server, error) {
 }
 
 // NewMux returns the router
-func NewMux() (http.Handler, error) {
-	s, err := NewServer()
-	if err != nil {
-		log.Fatalln(err)
-	}
+func NewMux(s *Server) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/request", cors(s.HandleRequest))

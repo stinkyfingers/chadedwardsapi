@@ -16,7 +16,11 @@ const (
 func main() {
 	flag.Parse()
 	fmt.Print("Running. \n")
-	rh, err := server.NewMux()
+	s, err := server.NewServer("jds")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	rh, err := server.NewMux(s)
 	if err != nil {
 		log.Fatal(err)
 	}

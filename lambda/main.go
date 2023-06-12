@@ -9,7 +9,11 @@ import (
 )
 
 func main() {
-	mux, err := server.NewMux()
+	s, err := server.NewServer("")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	mux, err := server.NewMux(s)
 	if err != nil {
 		log.Fatal(err)
 	}
