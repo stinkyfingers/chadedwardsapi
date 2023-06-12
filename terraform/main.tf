@@ -86,6 +86,7 @@ resource "aws_lambda_function" "server" {
   handler          = "lambda-lambda"
   runtime          = "go1.x"
   source_code_hash = filebase64sha256("../lambda.zip")
+  timeout          = 15
   environment {
     variables = {
       TWILIO_USER        = data.aws_ssm_parameter.twilio_user.value
