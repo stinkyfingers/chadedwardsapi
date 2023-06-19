@@ -119,17 +119,20 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.checkPermission(req.IP); err != nil {
-		log.Print(err)
+		log.Print("error checking permission: ", err)
 		httpError(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	if err := sendSMS(req); err != nil {
+		log.Print("error sending sms: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Println("request received: ", req)
 	w.Header().Add("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(req)
 	if err != nil {
+		log.Print("error encoding response: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -188,6 +191,7 @@ func sendSMS(req Request) error {
 		Password: token,
 	})
 	destinations := strings.Split(os.Getenv("TWILIO_DESTINATION"), ",")
+	fmt.Println(destinations)
 	msg := fmt.Sprintf("%s (%s)\nFrom: %s\nMessage: %s", req.Song, req.Artist, req.Name, req.Message)
 	for _, destination := range destinations {
 		params := &openapi.CreateMessageParams{}

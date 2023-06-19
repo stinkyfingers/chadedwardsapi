@@ -81,7 +81,7 @@ resource "aws_lambda_alias" "server_live" {
 
 resource "aws_lambda_function" "server" {
   filename         = "../lambda.zip"
-  function_name    = "server"
+  function_name    = "chadedwardsapi"
   role             = aws_iam_role.lambda_role.arn
   handler          = "lambda-lambda"
   runtime          = "go1.x"
