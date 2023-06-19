@@ -31,22 +31,22 @@ variable "twilio_destination" {
 
 variable "nexmo_key" {
   type    = string
-  default = "/chadedwards/nexmo_key"
+  default = "/chadedwardsapi/nexmo_key"
 }
 
 variable "nexmo_secret" {
   type    = string
-  default = "/chadedwards/nexmo_secret"
+  default = "/chadedwardsapi/nexmo_secret"
 }
 
 variable "nexmo_source" {
   type    = string
-  default = "/chadedwards/nexmo_source"
+  default = "/chadedwardsapi/nexmo_source"
 }
 
 variable "nexmo_destination" {
   type    = string
-  default = "/chadedwards/nexmo_destination"
+  default = "/chadedwardsapi/nexmo_destination"
 }
 
 # provider
