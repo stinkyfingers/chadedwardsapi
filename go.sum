@@ -30,6 +30,8 @@ github.com/stinkyfingers/lambdify v0.0.0-20230612180407-da5a10bb5d06/go.mod h1:D
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.2 h1:4jaiDzPyXQvSd7D0EjG45355tLlV3VOECpq10pLC+8s=
+github.com/textmagic/textmagic-rest-go v0.0.0-20150929053809-461c1f376968 h1:zYv9bi1pALCK34taYbkki9PHBoYoVLZYWHKB3mIEbEY=
+github.com/textmagic/textmagic-rest-go v0.0.0-20150929053809-461c1f376968/go.mod h1:ZqUrU/sp2+XVAXWTWW3GrAjc51SXVyKUmu+B4FYtjf4=
 github.com/twilio/twilio-go v1.7.2 h1:tX38DXbSuDWWIK+tKAE2AJSMR6d8i7lf9ksY8J29VLE=
 github.com/twilio/twilio-go v1.7.2/go.mod h1:tdnfQ5TjbewoAu4lf9bMsGvfuJ/QU9gYuv9yx3TSIXU=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=

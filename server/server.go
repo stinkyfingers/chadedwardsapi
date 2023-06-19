@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,8 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/twilio/twilio-go"
-	"github.com/twilio/twilio-go/rest/api/v2010"
+	"github.com/pkg/errors"
 )
 
 type Server struct {
@@ -22,7 +22,7 @@ type Server struct {
 }
 
 type Request struct {
-	IP      string `json:"ip"`
+	Session string `json:"session"`
 	Name    string `json:"name"`
 	Message string `json:"message"`
 	Song    string `json:"song"`
@@ -33,6 +33,27 @@ type Suggestion struct {
 	Message string `json:"message"`
 	Song    string `json:"song"`
 	Artist  string `json:"artist"`
+}
+
+type SMSRequestBody struct {
+	From      string `json:"from"`
+	Text      string `json:"text"`
+	To        string `json:"to"`
+	APIKey    string `json:"api_key"`
+	APISecret string `json:"api_secret"`
+}
+
+type SMSResponseBody struct {
+	Messages []Message `json:"messages"`
+}
+type Message struct {
+	To               string `json:"to"`
+	MessageID        string `json:"message-id"`
+	Status           string `json:"status"` // 0 = ok
+	ErrorText        string `json:"error-text"`
+	RemainingBalance string `json:"remaining-balance"`
+	MessagePrice     string `json:"message-price"`
+	Network          string `json:"network"`
 }
 
 type Permission map[string]time.Time // ip:time
@@ -118,12 +139,12 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.checkPermission(req.IP); err != nil {
+	if err := s.checkPermission(req.Session); err != nil {
 		log.Print("error checking permission: ", err)
 		httpError(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	if err := sendSMS(req); err != nil {
+	if err := sendSMSs(req); err != nil {
 		log.Print("error sending sms: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -138,10 +159,10 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) checkPermission(ip string) error {
+func (s *Server) checkPermission(session string) error {
 	resp, err := s.Storage.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String("chadedwardsapi"),
-		Key:    aws.String("ip-blacklist"),
+		Key:    aws.String("session-blacklist"),
 	})
 	if err != nil { // return error unless file doesn't exist
 		if aerr, ok := err.(awserr.Error); ok {
@@ -158,13 +179,13 @@ func (s *Server) checkPermission(ip string) error {
 			return err
 		}
 	}
-	for ipAddress, timestamp := range permissions {
-		if ipAddress == ip && time.Now().Add(-1*timeout).Before(timestamp) {
+	for session, timestamp := range permissions {
+		if session == session && time.Now().Add(-1*timeout).Before(timestamp) {
 			return fmt.Errorf("permission denied: you must wait 10 minutes before requesting again")
 		}
 	}
 
-	permissions[ip] = time.Now()
+	permissions[session] = time.Now()
 	j, err := json.Marshal(permissions)
 	if err != nil {
 		return err
@@ -180,29 +201,51 @@ func (s *Server) checkPermission(ip string) error {
 	return nil
 }
 
-func sendSMS(req Request) error {
-	sid := os.Getenv("TWILIO_USER")
-	token := os.Getenv("TWILIO_PASS")
-	if sid == "" || token == "" {
-		return fmt.Errorf("missing twilio credentials")
-	}
-	client := twilio.NewRestClientWithParams(twilio.ClientParams{
-		Username: sid,
-		Password: token,
-	})
-	destinations := strings.Split(os.Getenv("TWILIO_DESTINATION"), ",")
-	fmt.Println(destinations)
-	msg := fmt.Sprintf("%s (%s)\nFrom: %s\nMessage: %s", req.Song, req.Artist, req.Name, req.Message)
+func sendSMSs(req Request) error {
+	var err error
+	destinations := strings.Split(os.Getenv("NEXMO_DESTINATION"), ",")
 	for _, destination := range destinations {
-		params := &openapi.CreateMessageParams{}
-		params.SetTo(destination)
-		params.SetFrom(os.Getenv("TWILIO_SOURCE"))
-		params.SetBody(msg)
-
-		_, err := client.Api.CreateMessage(params)
-		if err != nil {
-			return err
+		if smsErr := sendSMS(req, destination); smsErr != nil {
+			err = errors.Wrap(err, smsErr.Error())
 		}
+	}
+	return err
+}
+
+func sendSMS(req Request, destination string) error {
+	body := SMSRequestBody{
+		APIKey:    os.Getenv("NEXMO_KEY"),
+		APISecret: os.Getenv("NEXMO_SECRET"),
+		To:        destination,
+		From:      os.Getenv("NEXMO_SOURCE"),
+		Text:      fmt.Sprintf("%s (%s)\nFrom: %s\nMessage: %s", req.Song, req.Artist, req.Name, req.Message),
+	}
+	smsBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	r, err := http.NewRequest("POST", "https://rest.nexmo.com/sms/json", bytes.NewBuffer(smsBody))
+	if err != nil {
+		return err
+	}
+	r.Header.Set("Content-Type", "application/json")
+
+	cli := &http.Client{}
+	resp, err := cli.Do(r)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var messageResponse SMSResponseBody
+	if err = json.NewDecoder(resp.Body).Decode(&messageResponse); err != nil {
+		return err
+	}
+	log.Print("message response: ", messageResponse)
+	if len(messageResponse.Messages) == 0 {
+		return fmt.Errorf("no messages returned")
+	}
+	if messageResponse.Messages[0].Status != "0" {
+		return fmt.Errorf("message status: %s", messageResponse.Messages[0].ErrorText)
 	}
 	return nil
 }

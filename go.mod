@@ -6,7 +6,6 @@ require (
 	github.com/aws/aws-lambda-go v1.41.0
 	github.com/aws/aws-sdk-go v1.44.280
 	github.com/stinkyfingers/lambdify v0.0.0-20230612180407-da5a10bb5d06
-	github.com/twilio/twilio-go v1.7.2
 )
 
 require (

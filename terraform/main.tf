@@ -29,6 +29,26 @@ variable "twilio_destination" {
   default = "twilio_destination"
 }
 
+variable "nexmo_key" {
+  type    = string
+  default = "nexmo_key"
+}
+
+variable "nexmo_secret" {
+  type    = string
+  default = "nexmo_secret"
+}
+
+variable "nexmo_source" {
+  type    = string
+  default = "nexmo_source"
+}
+
+variable "nexmo_destination" {
+  type    = string
+  default = "nexmo_destination"
+}
+
 # provider
 terraform {
   required_providers {
@@ -93,6 +113,10 @@ resource "aws_lambda_function" "server" {
       TWILIO_PASS        = data.aws_ssm_parameter.twilio_pass.value
       TWILIO_SOURCE      = data.aws_ssm_parameter.twilio_source.value
       TWILIO_DESTINATION = data.aws_ssm_parameter.twilio_destination.value
+      NEXMO_KEY          = data.aws_ssm_parameter.nexmo_key.value
+      NEXMO_SECRET       = data.aws_ssm_parameter.nexmo_secret.value
+      NEXMO_SOURCE       = data.aws_ssm_parameter.nexmo_source.value
+      NEXMO_DESTINATION  = data.aws_ssm_parameter.nexmo_destination.value
     }
   }
 }
@@ -240,6 +264,26 @@ data "aws_ssm_parameter" "twilio_source" {
 
 data "aws_ssm_parameter" "twilio_destination" {
   name            = var.twilio_destination
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "nexmo_key" {
+  name            = var.nexmo_key
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "nexmo_secret" {
+  name            = var.nexmo_secret
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "nexmo_source" {
+  name            = var.nexmo_source
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "nexmo_destination" {
+  name            = var.nexmo_destination
   with_decryption = false
 }
 
