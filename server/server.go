@@ -45,7 +45,7 @@ func NewServer(profile string) (*Server, error) {
 	}
 	return &Server{
 		Storage: s3.New(sess),
-		SMS:     sms.NewTwilio(),
+		SMS:     sms.NewNexmo(),
 	}, nil
 }
 
