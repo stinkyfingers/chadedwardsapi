@@ -62,6 +62,7 @@ func isPermittedOrigin(origin string) string {
 	var permittedOrigins = []string{
 		"http://localhost:3000",
 		"https://chadedwardsband.com",
+		"https://www.chadedwardsband.com",
 	}
 	for _, permittedOrigin := range permittedOrigins {
 		if permittedOrigin == origin {
