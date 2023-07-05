@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -14,46 +12,18 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/pkg/errors"
+	"github.com/stinkyfingers/chadedwardsapi/sms"
 )
 
 type Server struct {
 	Storage *s3.S3
-}
-
-type Request struct {
-	Session string `json:"session"`
-	Name    string `json:"name"`
-	Message string `json:"message"`
-	Song    string `json:"song"`
-	Artist  string `json:"artist"`
+	SMS     sms.SMS
 }
 
 type Suggestion struct {
 	Message string `json:"message"`
 	Song    string `json:"song"`
 	Artist  string `json:"artist"`
-}
-
-type SMSRequestBody struct {
-	From      string `json:"from"`
-	Text      string `json:"text"`
-	To        string `json:"to"`
-	APIKey    string `json:"api_key"`
-	APISecret string `json:"api_secret"`
-}
-
-type SMSResponseBody struct {
-	Messages []Message `json:"messages"`
-}
-type Message struct {
-	To               string `json:"to"`
-	MessageID        string `json:"message-id"`
-	Status           string `json:"status"` // 0 = ok
-	ErrorText        string `json:"error-text"`
-	RemainingBalance string `json:"remaining-balance"`
-	MessagePrice     string `json:"message-price"`
-	Network          string `json:"network"`
 }
 
 type Permission map[string]time.Time // ip:time
@@ -75,6 +45,7 @@ func NewServer(profile string) (*Server, error) {
 	}
 	return &Server{
 		Storage: s3.New(sess),
+		SMS:     sms.NewTwilio(),
 	}, nil
 }
 
@@ -134,7 +105,7 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req Request
+	var req sms.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -144,7 +115,7 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	if err := sendSMSs(req); err != nil {
+	if err := s.SMS.Send(req); err != nil {
 		log.Print("error sending sms: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -197,55 +168,6 @@ func (s *Server) checkPermission(session string) error {
 	})
 	if err != nil {
 		return err
-	}
-	return nil
-}
-
-func sendSMSs(req Request) error {
-	var err error
-	destinations := strings.Split(os.Getenv("NEXMO_DESTINATION"), ",")
-	for _, destination := range destinations {
-		if smsErr := sendSMS(req, destination); smsErr != nil {
-			err = errors.Wrap(err, smsErr.Error())
-		}
-	}
-	return err
-}
-
-func sendSMS(req Request, destination string) error {
-	body := SMSRequestBody{
-		APIKey:    os.Getenv("NEXMO_KEY"),
-		APISecret: os.Getenv("NEXMO_SECRET"),
-		To:        destination,
-		From:      os.Getenv("NEXMO_SOURCE"),
-		Text:      fmt.Sprintf("%s (%s)\nFrom: %s\nMessage: %s", req.Song, req.Artist, req.Name, req.Message),
-	}
-	smsBody, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	r, err := http.NewRequest("POST", "https://rest.nexmo.com/sms/json", bytes.NewBuffer(smsBody))
-	if err != nil {
-		return err
-	}
-	r.Header.Set("Content-Type", "application/json")
-
-	cli := &http.Client{}
-	resp, err := cli.Do(r)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	var messageResponse SMSResponseBody
-	if err = json.NewDecoder(resp.Body).Decode(&messageResponse); err != nil {
-		return err
-	}
-	log.Print("message response: ", messageResponse)
-	if len(messageResponse.Messages) == 0 {
-		return fmt.Errorf("no messages returned")
-	}
-	if messageResponse.Messages[0].Status != "0" {
-		return fmt.Errorf("message status: %s", messageResponse.Messages[0].ErrorText)
 	}
 	return nil
 }
