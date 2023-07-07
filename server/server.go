@@ -2,21 +2,16 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/stinkyfingers/chadedwardsapi/sms"
+	"github.com/stinkyfingers/chadedwardsapi/storage"
 )
 
 type Server struct {
-	Storage *s3.S3
+	Storage storage.Storage
 	SMS     sms.SMS
 }
 
@@ -33,18 +28,13 @@ var (
 )
 
 func NewServer(profile string) (*Server, error) {
-	sess, err := session.NewSessionWithOptions(session.Options{
-		Profile: profile,
-		Config: aws.Config{
-			Region: aws.String("us-west-1"),
-		},
-	})
-
+	storage, err := storage.NewS3(profile)
 	if err != nil {
 		return nil, err
 	}
+
 	return &Server{
-		Storage: s3.New(sess),
+		Storage: storage,
 		SMS:     sms.NewNexmo(),
 	}, nil
 }
@@ -53,7 +43,8 @@ func NewServer(profile string) (*Server, error) {
 func NewMux(s *Server) (http.Handler, error) {
 
 	mux := http.NewServeMux()
-	mux.Handle("/request", cors(s.HandleRequest))
+	mux.Handle("/requests", cors(s.HandleListRequests))
+	mux.Handle("/request", cors(s.HandlePostRequest))
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -63,6 +54,7 @@ func isPermittedOrigin(origin string) string {
 		"http://localhost:3000",
 		"https://chadedwardsband.com",
 		"https://www.chadedwardsband.com",
+		"http://localhost:3001",
 	}
 	for _, permittedOrigin := range permittedOrigins {
 		if permittedOrigin == origin {
@@ -100,6 +92,62 @@ func status(w http.ResponseWriter, r *http.Request) {
 	w.Write(j)
 }
 
+func (s *Server) HandleListRequests(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+	requests, err := s.Storage.Read()
+	if err != nil {
+		log.Print("error reading requests: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(requests)
+	if err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) HandlePostRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	var req storage.Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Song == "" || req.Artist == "" {
+		httpError(w, "song and artist required", http.StatusBadRequest)
+		return
+	}
+	req.Time = time.Now()
+	//if err := s.Storage.CheckPermission(req.Session); err != nil {
+	//	log.Print("error checking permission: ", err)
+	//	httpError(w, err.Error(), http.StatusForbidden)
+	//	return
+	//}
+
+	if err := s.Storage.Write(req); err != nil {
+		log.Print("error writing request: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(req)
+	if err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		httpError(w, "invalid method", http.StatusBadRequest)
@@ -111,7 +159,7 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.checkPermission(req.Session); err != nil {
+	if err := s.Storage.CheckPermission(req.Session); err != nil {
 		log.Print("error checking permission: ", err)
 		httpError(w, err.Error(), http.StatusForbidden)
 		return
@@ -131,47 +179,47 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) checkPermission(session string) error {
-	resp, err := s.Storage.GetObject(&s3.GetObjectInput{
-		Bucket: aws.String("chadedwardsapi"),
-		Key:    aws.String("session-blacklist"),
-	})
-	if err != nil { // return error unless file doesn't exist
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != s3.ErrCodeNoSuchKey {
-				return err
-			}
-		}
-	}
-
-	permissions := make(Permission)
-	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
-		if err = json.NewDecoder(resp.Body).Decode(&permissions); err != nil {
-			return err
-		}
-	}
-	for session, timestamp := range permissions {
-		if session == session && time.Now().Add(-1*timeout).Before(timestamp) {
-			return fmt.Errorf("permission denied: you must wait 10 minutes before requesting again")
-		}
-	}
-
-	permissions[session] = time.Now()
-	j, err := json.Marshal(permissions)
-	if err != nil {
-		return err
-	}
-	_, err = s.Storage.PutObject(&s3.PutObjectInput{
-		Bucket: aws.String("chadedwardsapi"),
-		Key:    aws.String("ip-blacklist"),
-		Body:   aws.ReadSeekCloser(strings.NewReader(string(j))),
-	})
-	if err != nil {
-		return err
-	}
-	return nil
-}
+//func (s *Server) checkPermission(session string) error {
+//	resp, err := s.Storage.GetObject(&s3.GetObjectInput{
+//		Bucket: aws.String("chadedwardsapi"),
+//		Key:    aws.String("session-blacklist"),
+//	})
+//	if err != nil { // return error unless file doesn't exist
+//		if aerr, ok := err.(awserr.Error); ok {
+//			if aerr.Code() != s3.ErrCodeNoSuchKey {
+//				return err
+//			}
+//		}
+//	}
+//
+//	permissions := make(Permission)
+//	if resp != nil && resp.Body != nil {
+//		defer resp.Body.Close()
+//		if err = json.NewDecoder(resp.Body).Decode(&permissions); err != nil {
+//			return err
+//		}
+//	}
+//	for session, timestamp := range permissions {
+//		if session == session && time.Now().Add(-1*timeout).Before(timestamp) {
+//			return fmt.Errorf("permission denied: you must wait 10 minutes before requesting again")
+//		}
+//	}
+//
+//	permissions[session] = time.Now()
+//	j, err := json.Marshal(permissions)
+//	if err != nil {
+//		return err
+//	}
+//	_, err = s.Storage.PutObject(&s3.PutObjectInput{
+//		Bucket: aws.String("chadedwardsapi"),
+//		Key:    aws.String("ip-blacklist"),
+//		Body:   aws.ReadSeekCloser(strings.NewReader(string(j))),
+//	})
+//	if err != nil {
+//		return err
+//	}
+//	return nil
+//}
 
 func httpError(w http.ResponseWriter, errStr string, code int) {
 	j, err := json.Marshal(map[string]interface{}{
