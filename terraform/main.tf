@@ -60,8 +60,8 @@ variable "gmail_password" {
 }
 
 variable "gmail_destination" {
-    type    = string
-    default = "/chadedwardsapi/gmaildestination"
+  type    = string
+  default = "/chadedwardsapi/gmaildestination"
 }
 
 # provider
