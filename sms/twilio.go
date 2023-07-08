@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/stinkyfingers/chadedwardsapi/request"
 	"github.com/twilio/twilio-go"
 	openapi "github.com/twilio/twilio-go/rest/api/v2010"
 )
@@ -16,7 +17,7 @@ func NewTwilio() SMS {
 	return &Twilio{}
 }
 
-func (t *Twilio) Send(req Request) error {
+func (t *Twilio) Send(req request.Request) error {
 	client := twilio.NewRestClientWithParams(twilio.ClientParams{
 		Username: os.Getenv("TWILIO_USER"),
 		Password: os.Getenv("TWILIO_PASS"),

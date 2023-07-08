@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/stinkyfingers/chadedwardsapi/email"
+	"github.com/stinkyfingers/chadedwardsapi/request"
 	"github.com/stinkyfingers/chadedwardsapi/sms"
 	"github.com/stinkyfingers/chadedwardsapi/storage"
 )
@@ -118,7 +120,7 @@ func (s *Server) HandlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req storage.Request
+	var req request.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -128,14 +130,20 @@ func (s *Server) HandlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Time = time.Now()
-	//if err := s.Storage.CheckPermission(req.Session); err != nil {
-	//	log.Print("error checking permission: ", err)
-	//	httpError(w, err.Error(), http.StatusForbidden)
-	//	return
-	//}
+	if err := s.Storage.CheckPermission(req.Session); err != nil {
+		log.Print("error checking permission: ", err)
+		httpError(w, err.Error(), http.StatusForbidden)
+		return
+	}
 
 	if err := s.Storage.Write(req); err != nil {
 		log.Print("error writing request: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := email.SendEmail(req); err != nil {
+		log.Print("error sending email: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -154,7 +162,7 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req sms.Request
+	var req request.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -178,48 +186,6 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-
-//func (s *Server) checkPermission(session string) error {
-//	resp, err := s.Storage.GetObject(&s3.GetObjectInput{
-//		Bucket: aws.String("chadedwardsapi"),
-//		Key:    aws.String("session-blacklist"),
-//	})
-//	if err != nil { // return error unless file doesn't exist
-//		if aerr, ok := err.(awserr.Error); ok {
-//			if aerr.Code() != s3.ErrCodeNoSuchKey {
-//				return err
-//			}
-//		}
-//	}
-//
-//	permissions := make(Permission)
-//	if resp != nil && resp.Body != nil {
-//		defer resp.Body.Close()
-//		if err = json.NewDecoder(resp.Body).Decode(&permissions); err != nil {
-//			return err
-//		}
-//	}
-//	for session, timestamp := range permissions {
-//		if session == session && time.Now().Add(-1*timeout).Before(timestamp) {
-//			return fmt.Errorf("permission denied: you must wait 10 minutes before requesting again")
-//		}
-//	}
-//
-//	permissions[session] = time.Now()
-//	j, err := json.Marshal(permissions)
-//	if err != nil {
-//		return err
-//	}
-//	_, err = s.Storage.PutObject(&s3.PutObjectInput{
-//		Bucket: aws.String("chadedwardsapi"),
-//		Key:    aws.String("ip-blacklist"),
-//		Body:   aws.ReadSeekCloser(strings.NewReader(string(j))),
-//	})
-//	if err != nil {
-//		return err
-//	}
-//	return nil
-//}
 
 func httpError(w http.ResponseWriter, errStr string, code int) {
 	j, err := json.Marshal(map[string]interface{}{

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/stinkyfingers/chadedwardsapi/request"
 )
 
 type Nexmo struct{}
@@ -40,7 +41,7 @@ func NewNexmo() SMS {
 	return &Nexmo{}
 }
 
-func (n *Nexmo) Send(req Request) error {
+func (n *Nexmo) Send(req request.Request) error {
 	var err error
 	destinations := strings.Split(os.Getenv("NEXMO_DESTINATION"), ",")
 	for _, destination := range destinations {
@@ -51,7 +52,7 @@ func (n *Nexmo) Send(req Request) error {
 	return err
 }
 
-func sendSMS(req Request, destination string) error {
+func sendSMS(req request.Request, destination string) error {
 	body := NexmoRequestBody{
 		APIKey:    os.Getenv("NEXMO_KEY"),
 		APISecret: os.Getenv("NEXMO_SECRET"),

@@ -49,6 +49,21 @@ variable "nexmo_destination" {
   default = "/chadedwardsapi/nexmodestination"
 }
 
+variable "gmail_email" {
+  type    = string
+  default = "/chadedwardsapi/gmailemail"
+}
+
+variable "gmail_password" {
+  type    = string
+  default = "/chadedwardsapi/gmailpassword"
+}
+
+variable "gmail_destination" {
+    type    = string
+    default = "/chadedwardsapi/gmaildestination"
+}
+
 # provider
 terraform {
   required_providers {
@@ -117,6 +132,9 @@ resource "aws_lambda_function" "server" {
       NEXMO_SECRET       = data.aws_ssm_parameter.nexmo_secret.value
       NEXMO_SOURCE       = data.aws_ssm_parameter.nexmo_source.value
       NEXMO_DESTINATION  = data.aws_ssm_parameter.nexmo_destination.value
+      GMAIL_EMAIL        = data.aws_ssm_parameter.gmail_email.value
+      GMAIL_PASSWORD     = data.aws_ssm_parameter.gmail_password.value
+      GMAIL_DESTINATION  = data.aws_ssm_parameter.gmail_destination.value
     }
   }
 }
@@ -284,6 +302,21 @@ data "aws_ssm_parameter" "nexmo_source" {
 
 data "aws_ssm_parameter" "nexmo_destination" {
   name            = var.nexmo_destination
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "gmail_email" {
+  name            = var.gmail_email
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "gmail_password" {
+  name            = var.gmail_password
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "gmail_destination" {
+  name            = var.gmail_destination
   with_decryption = false
 }
 

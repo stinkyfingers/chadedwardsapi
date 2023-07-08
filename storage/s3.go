@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/stinkyfingers/chadedwardsapi/request"
 )
 
 type S3 struct {
@@ -38,7 +39,7 @@ func NewS3(profile string) (*S3, error) {
 	}, nil
 }
 
-func (s *S3) Write(req Request) error {
+func (s *S3) Write(req request.Request) error {
 	requests, err := s.Read()
 	if err != nil {
 		return err
@@ -59,7 +60,7 @@ func (s *S3) Write(req Request) error {
 	return nil
 }
 
-func (s *S3) Read() ([]Request, error) {
+func (s *S3) Read() ([]request.Request, error) {
 	resp, err := s.Session.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(requestsKey),
@@ -70,9 +71,9 @@ func (s *S3) Read() ([]Request, error) {
 				return nil, err
 			}
 		}
-		return []Request{}, nil
+		return []request.Request{}, nil
 	}
-	var requests []Request
+	var requests []request.Request
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 		if err = json.NewDecoder(resp.Body).Decode(&requests); err != nil {
