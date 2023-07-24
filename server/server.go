@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/stinkyfingers/chadedwardsapi/auth"
 	"github.com/stinkyfingers/chadedwardsapi/email"
 	"github.com/stinkyfingers/chadedwardsapi/request"
 	"github.com/stinkyfingers/chadedwardsapi/sms"
@@ -47,6 +49,8 @@ func NewMux(s *Server) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/requests", cors(s.HandleListRequests))
 	mux.Handle("/request", cors(s.HandlePostRequest))
+	mux.Handle("/login", cors(s.HandleLogin))
+	mux.Handle("/auth", cors(authMiddleware(s.HandleProtected))) // route to test auth
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -66,7 +70,7 @@ func isPermittedOrigin(origin string) string {
 	return ""
 }
 
-func cors(handler func(w http.ResponseWriter, r *http.Request)) http.Handler {
+func cors(handler http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		permittedOrigin := isPermittedOrigin(r.Header.Get("Origin"))
 		w.Header().Set("Access-Control-Allow-Origin", permittedOrigin)
@@ -78,6 +82,18 @@ func cors(handler func(w http.ResponseWriter, r *http.Request)) http.Handler {
 		next := http.HandlerFunc(handler)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func authMiddleware(handler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if err := auth.VerifyJWT(token); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		next := http.HandlerFunc(handler)
+		next.ServeHTTP(w, r)
+	}
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +201,38 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	user := r.URL.Query().Get("username")
+	pass := r.URL.Query().Get("password")
+	signedToken, err := auth.JWT()
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	token, err := s.Storage.Login(auth.Authentication{Username: user, Password: pass, SignedToken: signedToken})
+	if err != nil {
+		httpError(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	w.Header().Add("Content-Type", "application/text")
+	err = json.NewEncoder(w).Encode(token)
+	if err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) HandleProtected(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("protected"))
 }
 
 func httpError(w http.ResponseWriter, errStr string, code int) {

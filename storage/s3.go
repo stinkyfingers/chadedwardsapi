@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/stinkyfingers/chadedwardsapi/auth"
 	"github.com/stinkyfingers/chadedwardsapi/request"
 )
 
@@ -21,6 +22,7 @@ const (
 	bucket       = "chadedwardsapi"
 	blacklistKey = "session-blacklist"
 	requestsKey  = "requests"
+	adminKey     = "admin.json"
 )
 
 func NewS3(profile string) (*S3, error) {
@@ -123,4 +125,31 @@ func (s *S3) CheckPermission(session string) error {
 		return err
 	}
 	return nil
+}
+
+func (s *S3) Login(authentication auth.Authentication) (string, error) {
+	resp, err := s.Session.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(adminKey),
+	})
+	if err != nil { // return error unless file doesn't exist
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() != s3.ErrCodeNoSuchKey {
+				return "", err
+			}
+		}
+	}
+
+	var authentications map[string]auth.Authentication
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+		if err = json.NewDecoder(resp.Body).Decode(&authentications); err != nil {
+			return "", err
+		}
+	}
+	found, ok := authentications[authentication.Username]
+	if !ok || found.Password != authentication.Password {
+		return "", fmt.Errorf("incorrect username or password")
+	}
+	return auth.JWT()
 }
