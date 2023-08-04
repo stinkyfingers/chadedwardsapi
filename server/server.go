@@ -1,14 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/stinkyfingers/chadedwardsapi/auth"
 	"github.com/stinkyfingers/chadedwardsapi/email"
+	"github.com/stinkyfingers/chadedwardsapi/photo"
 	"github.com/stinkyfingers/chadedwardsapi/request"
 	"github.com/stinkyfingers/chadedwardsapi/sms"
 	"github.com/stinkyfingers/chadedwardsapi/storage"
@@ -45,12 +50,15 @@ func NewServer(profile string) (*Server, error) {
 
 // NewMux returns the router
 func NewMux(s *Server) (http.Handler, error) {
-
+	gcp := &auth.GCP{}
 	mux := http.NewServeMux()
 	mux.Handle("/requests", cors(s.HandleListRequests))
 	mux.Handle("/request", cors(s.HandlePostRequest))
-	mux.Handle("/login", cors(s.HandleLogin))
-	mux.Handle("/auth", cors(authMiddleware(s.HandleProtected))) // route to test auth
+	mux.Handle("/auth", cors(gcp.Middleware(status)))            // route to test auth
+	mux.Handle("/test", cors(gcp.Middleware(s.HandleProtected))) // route to test auth
+	mux.Handle("/photos/list", cors(s.HandleListPhotos))
+	mux.Handle("/photos/update", cors(gcp.Middleware(s.HandleUpdatePhotos)))
+	mux.Handle("/photos/upload", cors(gcp.Middleware(s.HandleUploadPhotos)))
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -84,18 +92,6 @@ func cors(handler http.HandlerFunc) http.Handler {
 	})
 }
 
-func authMiddleware(handler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if err := auth.VerifyJWT(token); err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-		next := http.HandlerFunc(handler)
-		next.ServeHTTP(w, r)
-	}
-}
-
 func status(w http.ResponseWriter, r *http.Request) {
 	status := struct {
 		Health string `json:"health"`
@@ -115,7 +111,7 @@ func (s *Server) HandleListRequests(w http.ResponseWriter, r *http.Request) {
 		httpError(w, "invalid method", http.StatusBadRequest)
 		return
 	}
-	requests, err := s.Storage.Read()
+	requests, err := s.Storage.Read(storage.BUCKET_API, storage.KEY_REQUESTS)
 	if err != nil {
 		log.Print("error reading requests: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -152,7 +148,14 @@ func (s *Server) HandlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Storage.Write(req); err != nil {
+	requests, err := s.Storage.Read(storage.BUCKET_API, storage.KEY_REQUESTS)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	requests = append(requests, req)
+
+	if err := s.Storage.Write(storage.BUCKET_API, storage.KEY_REQUESTS, requests); err != nil {
 		log.Print("error writing request: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -164,7 +167,7 @@ func (s *Server) HandlePostRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Add("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode(req)
+	err = json.NewEncoder(w).Encode(req)
 	if err != nil {
 		log.Print("error encoding response: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -203,27 +206,50 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		httpError(w, "invalid method", http.StatusBadRequest)
-		return
-	}
-
-	user := r.URL.Query().Get("username")
-	pass := r.URL.Query().Get("password")
-	signedToken, err := auth.JWT()
+func (s *Server) HandleListPhotos(w http.ResponseWriter, r *http.Request) {
+	reader, err := s.Storage.Get(storage.BUCKET_API, storage.KEY_PHOTOS)
 	if err != nil {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	token, err := s.Storage.Login(auth.Authentication{Username: user, Password: pass, SignedToken: signedToken})
-	if err != nil {
-		httpError(w, err.Error(), http.StatusUnauthorized)
+	var metadata map[string]photo.Metadata
+	if err = json.NewDecoder(reader).Decode(&metadata); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Add("Content-Type", "application/text")
-	err = json.NewEncoder(w).Encode(token)
+
+	thumbList, err := s.Storage.List(storage.BUCKET_THUMBNAILS)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	//TODO
+	type Photo struct {
+		Body     []byte         `json:"body"`
+		Metadata photo.Metadata `json:"metadata"`
+	}
+	var photos []Photo
+
+	// TODO: parallelize or s3 dump all at once
+	for _, thumb := range thumbList {
+		thumbReader, err := s.Storage.Get(storage.BUCKET_THUMBNAILS, thumb)
+		if err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		body := &bytes.Buffer{}
+		if _, err := io.Copy(body, thumbReader); err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		photos = append(photos, Photo{
+			Body:     body.Bytes(),
+			Metadata: metadata[thumb],
+		})
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(photos)
 	if err != nil {
 		log.Print("error encoding response: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -231,8 +257,147 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) HandleUpdatePhotos(w http.ResponseWriter, r *http.Request) {
+	var photoMetadata map[string]photo.Metadata
+	err := json.NewDecoder(r.Body).Decode(&photoMetadata)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	reader, err := s.Storage.Get(storage.BUCKET_API, storage.KEY_PHOTOS)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var metadata map[string]photo.Metadata
+	err = json.NewDecoder(reader).Decode(&metadata)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for k, v := range photoMetadata {
+		metadata[k] = v
+	}
+	if err = s.Storage.Write(storage.BUCKET_API, storage.KEY_PHOTOS, metadata); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(photoMetadata)
+	if err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func (s *Server) HandleUploadPhotos(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	var photoRequests []photo.GooglePhotoRequest
+	err := json.NewDecoder(r.Body).Decode(&photoRequests)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	metadataMap := make(map[string]photo.Metadata)
+	for _, photoRequest := range photoRequests {
+		file, err := photo.GetGooglePhoto(photoRequest)
+		if err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer os.Remove(file.Name())
+		if photoRequest.MimeType != "image/jpeg" {
+			httpError(w, "invalid mime type", http.StatusBadRequest)
+			return
+		}
+		// TODO enable png if/when we get converter below working
+		if !strings.HasSuffix(strings.ToLower(photoRequest.Filename), ".jpg") && !strings.HasSuffix(strings.ToLower(photoRequest.Filename), ".jpeg") {
+			httpError(w, "invalid file extension", http.StatusBadRequest)
+			return
+		}
+
+		if strings.HasSuffix(strings.ToLower(photoRequest.Filename), ".png") {
+			err = photo.PngToJpg(file.Name(), file) // TODO not working
+			if err != nil {
+				httpError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		// thumbnail
+		thumbnail, err := photo.CreateThumbnail(file.Name())
+		fmt.Println("A", err)
+		if err != nil {
+			log.Println("error creating thumbnail: ", err)
+		}
+		defer os.Remove(thumbnail)
+		if err = s.Storage.Upload(storage.BUCKET_THUMBNAILS, photoRequest.ID, thumbnail); err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err = s.Storage.Upload(storage.BUCKET_IMAGES, photoRequest.ID, file.Name()); err != nil {
+			httpError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		metadataMap[photoRequest.ID] = photoRequest.Metadata
+	}
+	// update custom metadata
+	res, err := s.Storage.Get(storage.BUCKET_API, storage.KEY_PHOTOS)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var metadata map[string]photo.Metadata
+	err = json.NewDecoder(res).Decode(&metadata)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	photo.UpdateMetadata(metadataMap, metadata)
+	if err = s.Storage.Write(storage.BUCKET_API, storage.KEY_PHOTOS, metadata); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	if err = json.NewEncoder(w).Encode(photoRequests); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+// HandleProtected is a handler to test protected routes.
 func (s *Server) HandleProtected(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("protected"))
+	keys, err := s.Storage.List(storage.BUCKET_IMAGES)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	f, err := s.Storage.Get(storage.BUCKET_IMAGES, keys[0])
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	metadata, err := photo.GetExifData(f)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(metadata)
+	if err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func httpError(w http.ResponseWriter, errStr string, code int) {
