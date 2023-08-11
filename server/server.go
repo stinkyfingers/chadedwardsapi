@@ -1,10 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -59,6 +57,7 @@ func NewMux(s *Server) (http.Handler, error) {
 	mux.Handle("/photos/list", cors(s.HandleListPhotos))
 	mux.Handle("/photos/update", cors(gcp.Middleware(s.HandleUpdatePhotos)))
 	mux.Handle("/photos/upload", cors(gcp.Middleware(s.HandleUploadPhotos)))
+	mux.Handle("/photos/delete", cors(gcp.Middleware(s.HandleDeletePhoto)))
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -218,38 +217,46 @@ func (s *Server) HandleListPhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thumbList, err := s.Storage.List(storage.BUCKET_THUMBNAILS)
-	if err != nil {
-		httpError(w, err.Error(), http.StatusInternalServerError)
-		return
+	type PhotoDatum struct {
+		Thumbnail string `json:"thumbnail"`
+		Image     string `json:"image"`
+		photo.Metadata
 	}
-	//TODO
-	type Photo struct {
-		Body     []byte         `json:"body"`
-		Metadata photo.Metadata `json:"metadata"`
-	}
-	var photos []Photo
-
-	// TODO: parallelize or s3 dump all at once
-	for _, thumb := range thumbList {
-		thumbReader, err := s.Storage.Get(storage.BUCKET_THUMBNAILS, thumb)
-		if err != nil {
-			httpError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		body := &bytes.Buffer{}
-		if _, err := io.Copy(body, thumbReader); err != nil {
-			httpError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		photos = append(photos, Photo{
-			Body:     body.Bytes(),
-			Metadata: metadata[thumb],
+	var photodata []PhotoDatum
+	for _, data := range metadata {
+		photodata = append(photodata, PhotoDatum{
+			Thumbnail: fmt.Sprintf("https://%s.s3.amazonaws.com/%s", storage.BUCKET_THUMBNAILS, data.Filename),
+			Image:     fmt.Sprintf("https://%s.s3.amazonaws.com/%s", storage.BUCKET_IMAGES, data.Filename),
+			Metadata:  data,
 		})
 	}
 
+	//thumbList, err := s.Storage.List(storage.BUCKET_THUMBNAILS)
+	//if err != nil {
+	//	httpError(w, err.Error(), http.StatusInternalServerError)
+	//	return
+	//}
+	////TODO
+	//type Photo struct {
+	//	URL      string         `json:"url"`
+	//	Metadata photo.Metadata `json:"metadata"`
+	//}
+	//var photos []Photo
+	//
+	//for _, thumb := range thumbList {
+	//	if fn := metadata[thumb].Filename; fn == "" {
+	//		meta := metadata[thumb]
+	//		meta.Filename = thumb
+	//		metadata[thumb] = meta
+	//	}
+	//	photos = append(photos, Photo{
+	//		URL:      fmt.Sprintf("https://%s.s3.amazonaws.com/%s", storage.BUCKET_THUMBNAILS, thumb),
+	//		Metadata: metadata[thumb],
+	//	})
+	//}
+
 	w.Header().Add("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(photos)
+	err = json.NewEncoder(w).Encode(photodata)
 	if err != nil {
 		log.Print("error encoding response: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
@@ -330,21 +337,21 @@ func (s *Server) HandleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 		}
 		// thumbnail
 		thumbnail, err := photo.CreateThumbnail(file.Name())
-		fmt.Println("A", err)
 		if err != nil {
 			log.Println("error creating thumbnail: ", err)
 		}
 		defer os.Remove(thumbnail)
 		if err = s.Storage.Upload(storage.BUCKET_THUMBNAILS, photoRequest.ID, thumbnail); err != nil {
+			fmt.Println("A", err)
 			httpError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		if err = s.Storage.Upload(storage.BUCKET_IMAGES, photoRequest.ID, file.Name()); err != nil {
+			fmt.Println("B", err)
 			httpError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		metadataMap[photoRequest.ID] = photoRequest.Metadata
 	}
 	// update custom metadata
@@ -370,6 +377,44 @@ func (s *Server) HandleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func (s *Server) HandleDeletePhoto(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		httpError(w, "missing name", http.StatusBadRequest)
+		return
+	}
+	if err := s.Storage.Delete(storage.BUCKET_IMAGES, name); err != nil {
+		httpError(w, "missing name", http.StatusBadRequest)
+		return
+	}
+	if err := s.Storage.Delete(storage.BUCKET_THUMBNAILS, name); err != nil {
+		httpError(w, "missing name", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.Storage.Get(storage.BUCKET_API, storage.KEY_PHOTOS)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var metadata map[string]photo.Metadata
+	err = json.NewDecoder(resp).Decode(&metadata)
+	if err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	delete(metadata, name)
+	if err = s.Storage.Write(storage.BUCKET_API, storage.KEY_PHOTOS, metadata); err != nil {
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httpSuccess(w)
 }
 
 // HandleProtected is a handler to test protected routes.
@@ -407,6 +452,18 @@ func httpError(w http.ResponseWriter, errStr string, code int) {
 	})
 	if err != nil {
 		http.Error(w, err.Error(), code)
+		return
+	}
+	w.Header().Add("Content-Type", "application/json")
+	w.Write(j)
+}
+
+func httpSuccess(w http.ResponseWriter) {
+	j, err := json.Marshal(map[string]interface{}{
+		"success": true,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Add("Content-Type", "application/json")

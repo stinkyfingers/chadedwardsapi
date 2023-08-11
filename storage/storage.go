@@ -10,7 +10,8 @@ type Storage interface {
 	Read(bucket, key string) ([]obj, error)
 	Get(bucket, key string) (io.ReadCloser, error)
 	List(bucket string) ([]string, error)
-	Upload(bucket, key string, filename string) error
+	Delete(bucket, key string) error
+	Upload(bucket, key, filename string) error
 	CheckPermission(session string) error
 }
 

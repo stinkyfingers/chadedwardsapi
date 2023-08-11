@@ -21,12 +21,12 @@ import (
 
 type Metadata struct {
 	Filename         string    `json:"filename"`
-	DateTimeOriginal time.Time `json:"datetimeOriginal"`
-	GPSLongitude     float64   `json:"gpsLongitude"`
-	GPSLatitude      float64   `json:"gpsLatitude"`
-	Location         *Location `json:"location"`
-	Category         string    `json:"category"`
-	Tags             string    `json:"tags"`
+	DateTimeOriginal time.Time `json:"datetimeOriginal,omitempty"`
+	GPSLongitude     float64   `json:"gpsLongitude,omitempty"`
+	GPSLatitude      float64   `json:"gpsLatitude,omitempty"`
+	Location         *Location `json:"location,omitempty"`
+	Category         string    `json:"category,omitempty"`
+	Tags             []string  `json:"tags,omitempty"`
 }
 
 type ExifData struct {

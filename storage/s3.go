@@ -26,8 +26,7 @@ const (
 	BUCKET_THUMBNAILS = "chadedwardsbandthumbnails"
 	blacklistKey      = "session-blacklist"
 	KEY_REQUESTS      = "requests"
-	adminKey          = "admin.json"
-	KEY_PHOTOS        = "photos"
+	KEY_PHOTOS        = "photos.json"
 )
 
 func NewS3(profile string) (*S3, error) {
@@ -117,7 +116,7 @@ func (s *S3) List(bucket string) ([]string, error) {
 	return keys, nil
 }
 
-func (s *S3) Upload(bucket, key string, filename string) error {
+func (s *S3) Upload(bucket, key, filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -138,7 +137,14 @@ func (s *S3) Upload(bucket, key string, filename string) error {
 		ContentType:   aws.String(fileType), // e.g. image/jpeg
 	})
 	return err
+}
 
+func (s *S3) Delete(bucket, key string) error {
+	_, err := s.Session.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	return err
 }
 
 func (s *S3) CheckPermission(session string) error {
