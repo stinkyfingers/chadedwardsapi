@@ -65,13 +65,13 @@ variable "gmail_destination" {
 }
 
 variable "jwt_key" {
-    type    = string
-    default = "/chadedwardsapi/jwtkey"
+  type    = string
+  default = "/chadedwardsapi/jwtkey"
 }
 
 variable "positionstack_key" {
-    type    = string
-    default = "/chadedwardsapi/positionstack_key"
+  type    = string
+  default = "/chadedwardsapi/positionstack_key"
 }
 
 # provider
