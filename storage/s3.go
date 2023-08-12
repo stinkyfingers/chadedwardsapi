@@ -135,6 +135,7 @@ func (s *S3) Upload(bucket, key, filename string) error {
 		Body:          bytes.NewReader(buffer),
 		ContentLength: aws.Int64(info.Size()),
 		ContentType:   aws.String(fileType), // e.g. image/jpeg
+		ACL:           aws.String("public-read"),
 	})
 	return err
 }

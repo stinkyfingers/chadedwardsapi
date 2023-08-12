@@ -231,30 +231,6 @@ func (s *Server) HandleListPhotos(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	//thumbList, err := s.Storage.List(storage.BUCKET_THUMBNAILS)
-	//if err != nil {
-	//	httpError(w, err.Error(), http.StatusInternalServerError)
-	//	return
-	//}
-	////TODO
-	//type Photo struct {
-	//	URL      string         `json:"url"`
-	//	Metadata photo.Metadata `json:"metadata"`
-	//}
-	//var photos []Photo
-	//
-	//for _, thumb := range thumbList {
-	//	if fn := metadata[thumb].Filename; fn == "" {
-	//		meta := metadata[thumb]
-	//		meta.Filename = thumb
-	//		metadata[thumb] = meta
-	//	}
-	//	photos = append(photos, Photo{
-	//		URL:      fmt.Sprintf("https://%s.s3.amazonaws.com/%s", storage.BUCKET_THUMBNAILS, thumb),
-	//		Metadata: metadata[thumb],
-	//	})
-	//}
-
 	w.Header().Add("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(photodata)
 	if err != nil {
@@ -311,19 +287,33 @@ func (s *Server) HandleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metadataMap := make(map[string]photo.Metadata)
+	revertFunc := func() { // func to un-write these images & thumbnails
+		for _, photoRequest := range photoRequests {
+			s.Storage.Delete(storage.BUCKET_IMAGES, photoRequest.ID)
+			s.Storage.Delete(storage.BUCKET_THUMBNAILS, photoRequest.ID)
+		}
+	}
 	for _, photoRequest := range photoRequests {
+		if photoRequest.ID == "" {
+			revertFunc()
+			httpError(w, "no photo filename provided", http.StatusInternalServerError)
+			return
+		}
 		file, err := photo.GetGooglePhoto(photoRequest)
 		if err != nil {
+			revertFunc()
 			httpError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer os.Remove(file.Name())
 		if photoRequest.MimeType != "image/jpeg" {
+			revertFunc()
 			httpError(w, "invalid mime type", http.StatusBadRequest)
 			return
 		}
 		// TODO enable png if/when we get converter below working
 		if !strings.HasSuffix(strings.ToLower(photoRequest.Filename), ".jpg") && !strings.HasSuffix(strings.ToLower(photoRequest.Filename), ".jpeg") {
+			revertFunc()
 			httpError(w, "invalid file extension", http.StatusBadRequest)
 			return
 		}
@@ -331,6 +321,7 @@ func (s *Server) HandleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(strings.ToLower(photoRequest.Filename), ".png") {
 			err = photo.PngToJpg(file.Name(), file) // TODO not working
 			if err != nil {
+				revertFunc()
 				httpError(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -342,38 +333,43 @@ func (s *Server) HandleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 		}
 		defer os.Remove(thumbnail)
 		if err = s.Storage.Upload(storage.BUCKET_THUMBNAILS, photoRequest.ID, thumbnail); err != nil {
-			fmt.Println("A", err)
+			revertFunc()
 			httpError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		if err = s.Storage.Upload(storage.BUCKET_IMAGES, photoRequest.ID, file.Name()); err != nil {
-			fmt.Println("B", err)
+			revertFunc()
 			httpError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		photoRequest.Metadata.Filename = photoRequest.ID
 		metadataMap[photoRequest.ID] = photoRequest.Metadata
 	}
 	// update custom metadata
 	res, err := s.Storage.Get(storage.BUCKET_API, storage.KEY_PHOTOS)
 	if err != nil {
+		revertFunc()
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	var metadata map[string]photo.Metadata
 	err = json.NewDecoder(res).Decode(&metadata)
 	if err != nil {
+		revertFunc()
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	photo.UpdateMetadata(metadataMap, metadata)
 	if err = s.Storage.Write(storage.BUCKET_API, storage.KEY_PHOTOS, metadata); err != nil {
+		revertFunc()
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Add("Content-Type", "application/json")
 	if err = json.NewEncoder(w).Encode(photoRequests); err != nil {
+		revertFunc()
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
