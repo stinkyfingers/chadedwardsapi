@@ -64,6 +64,16 @@ variable "gmail_destination" {
   default = "/chadedwardsapi/gmaildestination"
 }
 
+variable "jwt_key" {
+  type    = string
+  default = "/chadedwardsapi/jwtkey"
+}
+
+variable "positionstack_key" {
+  type    = string
+  default = "/chadedwardsapi/positionstack_key"
+}
+
 # provider
 terraform {
   required_providers {
@@ -135,6 +145,8 @@ resource "aws_lambda_function" "server" {
       GMAIL_EMAIL        = data.aws_ssm_parameter.gmail_email.value
       GMAIL_PASSWORD     = data.aws_ssm_parameter.gmail_password.value
       GMAIL_DESTINATION  = data.aws_ssm_parameter.gmail_destination.value
+      JWT_KEY            = data.aws_ssm_parameter.jwt_key.value
+      POSITIONSTACK_KEY  = data.aws_ssm_parameter.positionstack_key.value
     }
   }
 }
@@ -317,6 +329,16 @@ data "aws_ssm_parameter" "gmail_password" {
 
 data "aws_ssm_parameter" "gmail_destination" {
   name            = var.gmail_destination
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "jwt_key" {
+  name            = var.jwt_key
+  with_decryption = true
+}
+
+data "aws_ssm_parameter" "positionstack_key" {
+  name            = var.positionstack_key
   with_decryption = false
 }
 

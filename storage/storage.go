@@ -1,16 +1,21 @@
 package storage
 
 import (
+	"io"
 	"time"
-
-	"github.com/stinkyfingers/chadedwardsapi/request"
 )
 
 type Storage interface {
-	Write(r request.Request) error
-	Read() ([]request.Request, error)
+	Write(bucket, key string, o obj) error
+	Read(bucket, key string) ([]obj, error)
+	Get(bucket, key string) (io.ReadCloser, error)
+	List(bucket string) ([]string, error)
+	Delete(bucket, key string) error
+	Upload(bucket, key, filename string) error
 	CheckPermission(session string) error
 }
+
+type obj interface{}
 
 type Permission map[string]time.Time // ip:time
 var (
