@@ -152,7 +152,7 @@ resource "aws_lambda_function" "server" {
       GMAIL_DESTINATION  = data.aws_ssm_parameter.gmail_destination.value
       JWT_KEY            = data.aws_ssm_parameter.jwt_key.value
       POSITIONSTACK_KEY  = data.aws_ssm_parameter.positionstack_key.value
-      # OPENAI_API_KEY     = data.aws_ssm_parameter.gpt_key.value
+      OPENAI_API_KEY     = data.aws_ssm_parameter.gpt_key.value
     }
   }
 }
@@ -348,10 +348,10 @@ data "aws_ssm_parameter" "positionstack_key" {
   with_decryption = false
 }
 
-# data "aws_ssm_parameter" "gpt_key" {
-#   name            = var.gpt_key
-#   with_decryption = true
-# }
+data "aws_ssm_parameter" "gpt_key" {
+  name            = var.gpt_key
+  with_decryption = true
+}
 
 # backend
 terraform {
@@ -359,7 +359,7 @@ terraform {
     bucket = "remotebackend"
     key    = "chadedwardsapi/terraform.tfstate"
     region = "us-west-1"
-    profile = var.profile
+    profile = "jds"
   }
 }
 
