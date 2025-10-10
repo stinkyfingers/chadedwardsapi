@@ -16,6 +16,7 @@ require (
 require (
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/sashabaranov/go-openai v1.41.2 // indirect
 	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

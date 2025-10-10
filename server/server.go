@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sashabaranov/go-openai"
 	"github.com/stinkyfingers/chadedwardsapi/auth"
 	"github.com/stinkyfingers/chadedwardsapi/email"
 	"github.com/stinkyfingers/chadedwardsapi/photo"
@@ -58,6 +60,7 @@ func NewMux(s *Server) (http.Handler, error) {
 	mux.Handle("/photos/update", cors(gcp.Middleware(s.HandleUpdatePhotos)))
 	mux.Handle("/photos/upload", cors(gcp.Middleware(s.HandleUploadPhotos)))
 	mux.Handle("/photos/delete", cors(gcp.Middleware(s.HandleDeletePhoto)))
+	mux.Handle("/chatgpt", cors(s.HandleChatGPT))
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -435,6 +438,90 @@ func (s *Server) HandleProtected(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	err = json.NewEncoder(w).Encode(metadata)
 	if err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+type ChatGPTRequest struct {
+	Message string `json:"message"`
+}
+
+type ChatGPTResponse struct {
+	Response string `json:"response"`
+}
+
+// HandleChatGPT handles ChatGPT completion requests with country western persona
+func (s *Server) HandleChatGPT(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	var req ChatGPTRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Message == "" {
+		httpError(w, "message is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get OpenAI API key from environment
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		log.Print("OPENAI_API_KEY not set")
+		httpError(w, "OpenAI API key not configured", http.StatusInternalServerError)
+		return
+	}
+
+	// Create OpenAI client
+	client := openai.NewClient(apiKey)
+
+	// Create the system role with country western persona
+	systemRole := openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleSystem,
+		Content: "You are an assistant that speaks like a stereotypical country western musician. Be sure to include some country slang and cliches (such as tailgates, muddy tires, cutoff jeans, camo hats, shitty macrobrewed beer brands, cheating on your wife, etc.) in your response.",
+	}
+
+	// Create user message
+	userMessage := openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: req.Message,
+	}
+
+	// Make the completion request
+	resp, err := client.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT3Dot5Turbo,
+			Messages: []openai.ChatCompletionMessage{
+				systemRole,
+				userMessage,
+			},
+		},
+	)
+
+	if err != nil {
+		log.Printf("ChatCompletion error: %v", err)
+		httpError(w, "Failed to get response from ChatGPT", http.StatusInternalServerError)
+		return
+	}
+
+	if len(resp.Choices) == 0 {
+		httpError(w, "No response from ChatGPT", http.StatusInternalServerError)
+		return
+	}
+
+	response := ChatGPTResponse{
+		Response: resp.Choices[0].Message.Content,
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Print("error encoding response: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return

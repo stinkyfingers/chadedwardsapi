@@ -74,6 +74,11 @@ variable "positionstack_key" {
   default = "/chadedwardsapi/positionstack_key"
 }
 
+variable "gpt_key" {
+  type    = string
+  default = "/chadedwards/gpt_key"
+}
+
 # provider
 terraform {
   required_providers {
@@ -147,6 +152,7 @@ resource "aws_lambda_function" "server" {
       GMAIL_DESTINATION  = data.aws_ssm_parameter.gmail_destination.value
       JWT_KEY            = data.aws_ssm_parameter.jwt_key.value
       POSITIONSTACK_KEY  = data.aws_ssm_parameter.positionstack_key.value
+      # OPENAI_API_KEY     = data.aws_ssm_parameter.gpt_key.value
     }
   }
 }
@@ -342,13 +348,18 @@ data "aws_ssm_parameter" "positionstack_key" {
   with_decryption = false
 }
 
+# data "aws_ssm_parameter" "gpt_key" {
+#   name            = var.gpt_key
+#   with_decryption = true
+# }
+
 # backend
 terraform {
   backend "s3" {
     bucket = "remotebackend"
     key    = "chadedwardsapi/terraform.tfstate"
     region = "us-west-1"
-    #        profile = "jds"
+    profile = var.profile
   }
 }
 
