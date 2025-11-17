@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/sashabaranov/go-openai"
+	"google.golang.org/genai"
+
 	"github.com/stinkyfingers/chadedwardsapi/auth"
 	"github.com/stinkyfingers/chadedwardsapi/email"
 	"github.com/stinkyfingers/chadedwardsapi/photo"
@@ -61,6 +63,7 @@ func NewMux(s *Server) (http.Handler, error) {
 	mux.Handle("/photos/upload", cors(gcp.Middleware(s.HandleUploadPhotos)))
 	mux.Handle("/photos/delete", cors(gcp.Middleware(s.HandleDeletePhoto)))
 	mux.Handle("/chatgpt", cors(s.HandleChatGPT))
+	mux.Handle("/gemini", cors(s.HandleGemini))
 	mux.Handle("/health", cors(status))
 	return mux, nil
 }
@@ -522,6 +525,69 @@ func (s *Server) HandleChatGPT(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Print("error encoding response: ", err)
+		httpError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+type GeminiRequest struct {
+	Message string `json:"message"`
+}
+
+type GeminiResponse struct {
+	Response string `json:"response"`
+}
+
+// HandleGemini handles Gemini completion requests
+func (s *Server) HandleGemini(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		httpError(w, "invalid method", http.StatusBadRequest)
+		return
+	}
+
+	var req GeminiRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Message == "" {
+		httpError(w, "message is required", http.StatusBadRequest)
+		return
+	}
+
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		log.Print("GEMINI_API_KEY not set")
+		httpError(w, "Gemini API key not configured", http.StatusInternalServerError)
+		return
+	}
+
+	client, err := genai.NewClient(r.Context(), nil)
+	if err != nil {
+		httpError(w, "Failed to create Gemini client", http.StatusInternalServerError)
+		return
+	}
+
+	result, err := client.Models.GenerateContent(
+		r.Context(),
+		"gemini-2.5-flash",
+		genai.Text(req.Message),
+		nil,
+	)
+	if err != nil {
+		log.Printf("Gemini API error: %v", err)
+		httpError(w, "Failed to get response from Gemini", http.StatusInternalServerError)
+		return
+	}
+
+	geminiResponse := GeminiResponse{
+		Response: result.Text(),
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(geminiResponse); err != nil {
 		log.Print("error encoding response: ", err)
 		httpError(w, err.Error(), http.StatusInternalServerError)
 		return

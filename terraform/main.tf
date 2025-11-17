@@ -79,6 +79,11 @@ variable "gpt_key" {
   default = "/chadedwards/gpt_key"
 }
 
+variable "gemini_key" {
+  type    = string
+  default = "/chadedwards/gemini_key"
+}
+
 # provider
 terraform {
   required_providers {
@@ -153,8 +158,14 @@ resource "aws_lambda_function" "server" {
       JWT_KEY            = data.aws_ssm_parameter.jwt_key.value
       POSITIONSTACK_KEY  = data.aws_ssm_parameter.positionstack_key.value
       OPENAI_API_KEY     = data.aws_ssm_parameter.gpt_key.value
+      GEMINI_API_KEY     = data.aws_ssm_parameter.gemini_key.value
     }
   }
+}
+
+data "aws_ssm_parameter" "gemini_key" {
+  name = var.gemini_key
+  with_decryption = true
 }
 
 # IAM
